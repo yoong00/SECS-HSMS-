@@ -1,0 +1,600 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
+using System.Xml;
+using System.IO;
+using System.Diagnostics;
+using System.Timers;
+using System.Threading;
+using System.Xml.XPath;
+using System.Xml.Linq;
+using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
+
+namespace SM32proMX
+{
+    public partial class Host : Form
+    {
+        [DllImport("User32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, ref COPYDATASTRUCT lParam);
+        
+        Process[] pro = Process.GetProcessesByName("SecsDevice");
+        
+        public Host()
+        {
+            InitializeComponent();
+            tb_process_name.Text = "SecsDevice";
+        }
+
+        public const Int32 WM_COPYDATA = 0x4A;
+
+        public struct COPYDATASTRUCT
+        {    
+            public IntPtr dwData;
+            public int cbData;
+            [MarshalAs(UnmanagedType.LPStr)]
+            public string lpData;
+        }
+
+        COPYDATASTRUCT cds;    //Message Receive 
+
+        byte[] buff;
+        
+        string dateString;
+        int number = 1;
+
+        double TimerNum;
+
+        public void StopMessage(string strdata1, int count, int SamplingNum, COPYDATASTRUCT cdsC, string result, XmlDocument XmlDoc, int TRIDIndex)
+        {
+
+            try
+            {
+                if (SamplingNum == Convert.ToInt32(count + 1)) //(SamplingNum == count) //Sampling Time 횟수
+                {                    
+                    XmlDoc.InnerXml = strdata1;
+                    XmlNode firstNode = XmlDoc.DocumentElement;
+                    XmlNodeList Nodes = firstNode.ChildNodes;
+                    Nodes[3].InnerText = "4";
+
+                    cdsC.dwData = new IntPtr(0);
+                    cdsC.cbData = buff.Length + 1;// DataIndex;
+                    cdsC.lpData = XmlDoc.InnerXml;
+
+                    SendMessage(pro[0].MainWindowHandle, WM_COPYDATA, IntPtr.Zero, ref cdsC);
+                }
+            }
+            catch (Exception ex)
+            {
+                //MessageBox.Show(ex.Message);  
+            }
+            
+        }
+
+        private string ConSetSVID(string strdata2, int count, XmlDocument XmlDoc) //Continuous
+        {            
+            XmlDoc.InnerXml = strdata2;
+            XmlNode firstNode = XmlDoc.DocumentElement;
+            XmlNodeList Nodes = firstNode.ChildNodes;            
+            XmlNodeList subNode = Nodes[7].SelectNodes("Item"); 
+            string[] temNode = new string[subNode.Count];
+            string result = "";
+            try
+            {
+                if (Nodes[3].InnerText == "3" /*&& Convert.ToInt32(count) == 0*/)
+                {//good                
+                    for (int i = 0; i < subNode.Count; i++)
+                    {
+                        temNode[i] = subNode[i].InnerXml.ToString();
+
+                        foreach (ListViewItem item in svid.SVID_List.Items)
+                        {
+                            if (item.Text.Contains(temNode[i])) //SVID List에 있는 SVID와 들어온 SVID 비교
+                            {
+                                subNode[i].InnerText = item.SubItems[1].Text;//SVID가 있으면 Value값을 Item에 넣는다.
+                                break;
+                            }
+                            else
+                            {
+                                subNode[i].InnerText = "0"; //SVID가 없으면 0값을 Item에 넣는다.
+                            }
+                        }
+                    }
+                }
+                result = XmlDoc.InnerXml;             
+            }
+            catch(Exception ex)
+            {
+                //MessageBox.Show(ex.Message);  
+            }            
+            return result;
+        }
+
+        private string SinSetSVID(string strdata3, XmlDocument XmlDoc)//Single
+        {
+            XmlDoc.InnerXml = strdata3;
+            XmlNode firstNode = XmlDoc.DocumentElement; 
+            XmlNodeList Nodes = firstNode.ChildNodes;            
+            XmlNodeList subNode = Nodes[3].SelectNodes("Item");
+            string[] temNode = new string[subNode.Count];
+            string result = "";
+            try
+            {
+                for (int i = 0; i < subNode.Count; i++)
+                {
+                    temNode[i] = subNode[i].InnerXml.ToString();
+
+                    foreach (ListViewItem item in svid.SVID_List.Items)
+                    {
+                        if (item.Text.Contains(temNode[i]))//SVID List에 있는 SVID와 들어온 SVID 비교
+                        {
+                            subNode[i].InnerText = item.SubItems[1].Text; //SVID가 있으면 Value값을 Item에 넣는다.
+                            break;
+                        }
+                        else
+                        {
+                            subNode[i].InnerText = "0"; //SVID가 없으면 0값을 Item에 넣는다.
+                        }
+                    }
+                }
+                result = XmlDoc.InnerXml;
+                string[] split_result = result.Split(new string[] { "<", "><", ">" }, StringSplitOptions.RemoveEmptyEntries);
+            }
+            catch (Exception ex)
+            {
+                //MessageBox.Show(ex.Message);     
+            }
+            return result;
+            
+        }
+        private void Single(object ThreadNum, XmlDocument XmlDoc)
+        {
+            string SendMessageData = "";
+
+            if (cds.lpData.Contains("Single_Get_SVID"))
+            {
+                DateTime date = DateTime.Now;
+                string dateString = date.ToString("yyyyMMdd_HH:mm:ss.fff");
+                SinSetSVID(cds.lpData, XmlDoc);
+                cds.dwData = IntPtr.Zero;
+                cds.cbData = buff.Length + 2;
+                cds.lpData = SinSetSVID(cds.lpData, XmlDoc);
+
+                tb_svidcount.Text = tb_svidcount.Text + Environment.NewLine + dateString + "-" + "S";
+                tb_svidcount.SelectionStart = tb_svidcount.Text.Length;
+                tb_svidcount.ScrollToCaret();
+
+                string SendMessageTemp = cds.lpData.Remove(50, 21);
+
+                SendMessageData = SendMessageTemp.Insert(50, dateString);
+
+                tb_datasend.Text = SendMessageData.Replace("><", ">\r\n<");
+                SendMessage(pro[0].MainWindowHandle, WM_COPYDATA, IntPtr.Zero, ref cds);
+
+                //tb_datasend.Text = cds.lpData;
+            }            
+        }
+
+        private void TimeCreate(threaddata th, COPYDATASTRUCT cdsS, XmlDocument XmlDoc, int TRIDIndex)
+        {
+            Timethread(th, cdsS, XmlDoc, TRIDIndex);
+        }
+
+        public void Period(long startTimeTick, long Count, COPYDATASTRUCT cdsC, XmlDocument XmlDoc)
+        {            
+            XmlDoc.InnerXml = cdsC.lpData;
+            XmlNode firstNode = XmlDoc.DocumentElement;
+            XmlNodeList Nodes = firstNode.ChildNodes;
+            TimerNum = Convert.ToDouble(Nodes[5].InnerText);
+            int SamplingNum = Convert.ToInt32(Nodes[6].InnerText);
+
+            double timeInterval = Convert.ToDouble(Nodes[5].InnerText) * 10000000;
+            
+            while (true)
+            {
+                DateTime dateTime = DateTime.Now;
+                long SleepTime = (startTimeTick + (long)(timeInterval * (Count + 1)));
+                if (dateTime.Ticks >= SleepTime)
+                {
+                    dateString = dateTime.ToString("yyyyMMdd_HH:mm:ss.fff");
+                    break;
+                }
+                else
+                {
+                    try
+                    { Thread.Sleep(2); }
+                    catch
+                    {
+                        break;
+                    }
+                }
+            }   
+        }
+        private object theLock = new object();
+
+        private void Timethread(threaddata the, COPYDATASTRUCT cdsC, XmlDocument XmlDoc, int TRIDIndex) //Thread 동작부분
+        {
+            XmlDoc.InnerXml = cdsC.lpData;
+            DateTime ThreadStartTick = DateTime.Now;
+            XmlNode firstNode = XmlDoc.DocumentElement;
+            XmlNodeList Nodes = firstNode.ChildNodes;
+            int TRID = Convert.ToInt32(Nodes[4].InnerText);
+            int SamplingNum = Convert.ToInt32(Nodes[6].InnerText);
+            
+            string SendMessageData = "";
+            object tempa = new object();
+            string[] lpdataValue = new string[2];
+            int Cnt = 0;
+                    
+            bool status = true;
+            try
+            {
+                while (status)
+                {
+                    lpdataValue = SendMessageFn(Convert.ToInt32(lpdataValue[0]), SamplingNum, cdsC, TRID, XmlDoc);
+
+                    if (this.InvokeRequired)
+                    {
+                        this.Invoke(new MethodInvoker(delegate
+                            {
+                                DateTime dateTime = DateTime.Now;
+                                dateString = dateTime.ToString("yyyyMMdd_HH:mm:ss.fff");
+
+                                tb_svidcount.Text = tb_svidcount.Text + Environment.NewLine + dateString + "-" + "C" + lpdataValue[0] + "     " + "TRID : " + TRID;
+                                tb_svidcount.SelectionStart = tb_svidcount.Text.Length;
+                                tb_svidcount.ScrollToCaret();
+
+                                string SendMessageTemp = lpdataValue[1].Remove(50, 21);
+
+                                SendMessageData = SendMessageTemp.Insert(50, dateString);
+
+                                tb_datasend.Text = SendMessageData.Replace("><", ">\r\n<");
+                                
+                                if(Cnt+1 == SamplingNum)
+                                    lv_tridActive.Items[TRIDIndex-1].Remove();                                                                                        
+                                }));
+                    }
+                    else
+                    {
+                        tb_svidcount.Text = tb_svidcount.Text + Environment.NewLine + dateString + "-" + "C" + lpdataValue[0] + "     " + "TRID : " + TRID;
+                    }
+
+                    Period(ThreadStartTick.Ticks, Cnt, cdsC, XmlDoc);
+            
+                    StopMessage(cdsC.lpData, Cnt, SamplingNum, cdsC, lpdataValue[1], XmlDoc, TRIDIndex);
+
+                    Cnt++;
+                    if (SamplingNum == Cnt)
+                        break;
+
+                    for (int i = 0; i < th.Count; i++)
+                    {
+                        if (th[i].ThreadID == TRID && th[i].threadstatus != true)
+                            status = false;
+                    }
+                }                    
+                the.sdthread.Abort();
+            }                      
+            catch (Exception ex)
+            {
+                //MessageBox.Show(ex.Message);  
+            }
+   
+        }
+             
+        public string[] SendMessageFn(int count, int SamplingNum, COPYDATASTRUCT cdsC, int TRID, XmlDocument XmlDoc)
+        {        
+            XmlDoc.InnerXml = cdsC.lpData;
+            XmlNode firstNode = XmlDoc.DocumentElement;
+            XmlNodeList Nodes = firstNode.ChildNodes;
+            XmlNodeList subNode = Nodes[7].SelectNodes("Item");
+            TRID = Convert.ToInt32(Nodes[4].InnerText);
+            XmlNodeList temNode = subNode;
+            string ConData = "0"; //continuous data
+            string[] returnValue = new string[2];
+
+            try
+            {
+            if (cdsC.lpData.Contains("Continuous_Get_SVID")) //Continuous 메세지가 들어올때
+            {
+                if (Nodes[3].InnerText == "1") //start(1) 들어왔는데 good 보낼때(0)
+                {
+                    Nodes[3].InnerText = "0"; // List에 SVID가 있으면 0 Good return
+                    cdsC.lpData = XmlDoc.InnerXml;
+                    SendMessage(pro[0].MainWindowHandle, WM_COPYDATA, IntPtr.Zero, ref cdsC);
+                    Nodes[3].InnerText = "3"; // status 상태를 3으로 바꾼다                                                                                                                      
+                }
+                else if (Nodes[3].InnerText == "2") //stop(2) 들어왔을때
+                {
+                    Nodes[3].InnerText = "0"; //Status 상태를 0(Good)으로 바꾼다.
+                    cdsC.lpData = XmlDoc.InnerXml;
+                    cdsC.dwData = new IntPtr(0);
+                    cdsC.cbData = buff.Length + 1;// DataIndex;
+
+                    SendMessage(pro[0].MainWindowHandle, WM_COPYDATA, IntPtr.Zero, ref cdsC);
+                }
+                ConData = ConSetSVID(XmlDoc.InnerXml, count, XmlDoc);
+            }
+                
+            cdsC.dwData = new IntPtr(0);
+            cdsC.cbData = buff.Length + 1;// DataIndex;
+            cdsC.lpData = ConData;
+                
+            if (Nodes[3].InnerText == "3") // Continuous 으로 들어왔을때 Sampling 횟수만큼 동작
+            {
+                SendMessage(pro[0].MainWindowHandle, WM_COPYDATA, IntPtr.Zero, ref cdsC);
+                count = count + 1;                    
+            }
+                
+            returnValue[0] = count.ToString();
+            returnValue[1] = ConData;
+ 
+            }            
+            catch (System.IndexOutOfRangeException e)
+            {
+                //MessageBox.Show(e.Message);                    
+            }
+            return returnValue;             
+        }
+
+        int endNum;
+        int threadnum;
+
+        public struct threaddata
+        {
+            public Thread sdthread;
+            public int ThreadID;
+            public bool threadstatus;
+        }
+
+
+        private static AutoResetEvent are = new AutoResetEvent(false);
+
+        List<threaddata> th = new List<threaddata>();
+        List<ListViewItem> olditem = new List<ListViewItem>();
+
+        protected override void WndProc(ref Message m)        
+        {
+            try
+            {
+                switch (m.Msg)
+                { 
+                    case WM_COPYDATA:
+                        cds = (COPYDATASTRUCT)m.GetLParam(typeof(COPYDATASTRUCT));
+                        buff = System.Text.Encoding.Unicode.GetBytes(cds.lpData);
+
+                        svidload();
+                        int ThreadNum = 0;
+                        endNum++;
+
+                        tb_datareceive.Text = cds.lpData;
+
+                        COPYDATASTRUCT cdsS;   //Single Message Receive  
+                        COPYDATASTRUCT cdsC;   //Continuous Message Receive 
+                        XmlDocument XmlDoc = new XmlDocument();
+                        int index = 0;
+
+                        if (cds.lpData.Contains("Continuous_Get_SVID"))
+                        {
+                            cdsC = cds;
+                            number++;   
+                            XmlDoc.InnerXml = cdsC.lpData;
+                            XmlNode firstNode = XmlDoc.DocumentElement;
+                            XmlNodeList Nodes = firstNode.ChildNodes;
+                            int SamplingCount = Convert.ToInt32(Nodes[6].InnerText);
+                            buff = System.Text.Encoding.Unicode.GetBytes(cdsC.lpData);
+
+                            int GetTRID = Convert.ToInt32(Nodes[4].InnerText);
+                            bool findTRID = false;
+                            string gtrid = "TRID : " + GetTRID.ToString();
+                            
+                            ListViewItem newitem = new ListViewItem(gtrid);
+                           
+                            olditem.Add(newitem);
+                            int threadIndex = 0;
+                                                                               
+                            ListViewItem tridlog = new ListViewItem();
+                            tridlog.Text = gtrid;
+                            lv_tridlog.Items.Add(tridlog);
+                            
+                            ListViewItem objLVI = lv_tridActive.FindItemWithText(newitem.Text);
+                            
+                            if (objLVI == null && SamplingCount != 0)
+                            {
+                                lv_tridActive.Items.Add(gtrid);
+                                index = index + 1;                            
+                            }
+                            else if(objLVI != null)
+                            {
+                                index = index + 1;
+                                lv_tridActive.Items.Remove(objLVI);
+                                lv_tridActive.Items.Add(objLVI); 
+                            }
+                                                     
+                            foreach(threaddata item in th)
+                            {
+                                if (item.ThreadID == GetTRID)
+                                {
+                                    findTRID = true;
+                                    break;
+                                }
+                                threadIndex++;
+                            }
+
+                            if (findTRID)
+                            {
+                                threaddata getThread = th[threadIndex];
+                                
+                                if (SamplingCount != 0)
+                                {
+                                    getThread.threadstatus = false;
+                                    th[threadIndex] = getThread;
+                                    th[threadIndex].sdthread.Join();
+
+                                    getThread.sdthread = new Thread(() => TimeCreate(getThread, cdsC, XmlDoc, index));
+                                    getThread.threadstatus = true;
+                                    th[threadIndex] = getThread;                          
+                                    getThread.sdthread.Start();
+                                    th[threadIndex] = getThread;
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < lv_tridActive.Items.Count; i++)
+                                    {
+                                        if (lv_tridActive.Items[i].Text.Contains(gtrid))
+                                        {
+                                            lv_tridActive.Items[i].Remove();
+                                        }
+                                    }                                    
+                                    getThread.threadstatus = false;
+                                    th[threadIndex] = getThread;
+                                    getThread.sdthread.Join();                           
+                                    th.RemoveAt(threadIndex);                                   
+                                }
+                            }
+                            else
+                            {
+                                if (SamplingCount != 0)
+                                {
+                                    threaddata creatThread; 
+                                    creatThread = new threaddata();
+                                    creatThread.ThreadID = GetTRID;
+                                    creatThread.threadstatus = true;
+                                    th.Add(creatThread);
+
+                                    creatThread.sdthread = new Thread(() => TimeCreate(th.Last(), cdsC, XmlDoc, index));
+                                    creatThread.sdthread.Start();
+                                    th[th.Count-1] = creatThread;
+                                }
+                            }                                           
+                        }                       
+                        else
+                        {
+                            cdsS = cds;
+                            buff = System.Text.Encoding.Unicode.GetBytes(cdsS.lpData);
+                            Single(ThreadNum, XmlDoc);
+                        }                        
+                        break;
+                    default:    
+                        base.WndProc(ref m);
+                        break;                     
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
+        }
+
+        private void tb_textclear_Click(object sender, EventArgs e)
+        {
+            tb_svidcount.Text = "";
+            lv_tridActive.Items.Clear();       
+            tb_datasend.Text = "";
+            tb_datareceive.Text = "";                
+        }
+        
+        SVID_Add svid = new SVID_Add();
+        
+        public void SVID_Click(object sender, EventArgs e)
+        {
+            if (this.InvokeRequired)
+            {
+                this.Invoke(new MethodInvoker(delegate
+                {
+                    svidload();
+                    svid.ShowDialog();  
+                }));
+            }
+            else
+            {
+                svidload();
+                svid.ShowDialog();  
+            }
+              
+        }
+        int loadcount = 0;
+        public void svidload()
+        {
+            string currentPath = System.IO.Directory.GetCurrentDirectory();
+            string savePath = currentPath + "\\test.txt";
+
+            if (!File.Exists(savePath))
+            {
+                StreamWriter svidadd = File.CreateText(savePath);                
+            }
+            if (loadcount == 0)
+            {                
+                LoadData(savePath);
+            }
+            loadcount++;                
+        }
+
+        public void LoadData(string fileName)
+        {            
+      
+            using (TextReader sr = new StreamReader(fileName))
+            {
+                string[] stringLines = sr.ReadToEnd().Replace("\n", "").Split((char)Keys.Enter);
+                
+                foreach (string stringLine in stringLines)
+                {
+                    if (stringLine != string.Empty)
+                    {
+                        string[] stringArray = stringLine.Split(',');
+                                                
+                        svid.SVID_List.Items.Add(stringArray[0]);
+                        foreach (ListViewItem item in svid.SVID_List.Items)
+                        {
+                            item.SubItems.Add(stringArray[1]);
+                        }                       
+                    }
+                }                 
+            }
+        }
+
+        private void Process_name_change_Click(object sender, EventArgs e)
+        {
+            if (tb_process_name.Text != null && tb_process_name.Text != "0")
+            {
+                string Processname = tb_process_name.Text;
+                pro = Process.GetProcessesByName(Processname);                
+            }
+        }
+        private void ThreadAbort_Click(object sender, EventArgs e)
+        {
+            for (int i = 0; i < lv_tridActive.Items.Count; i++)
+            {
+                th[i].sdthread.Abort();
+            }
+            lv_tridActive.Items.Clear();
+            endNum = 0;
+        }
+
+        private void SM32proMX_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            for (int i = 0; i < th.Count; i++)
+            {
+                th[i].sdthread.Abort();                
+            }
+        }
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= 0x02000000; // Turn on WS_EX_COMPOSITED 
+                return cp;
+            }
+        }
+    }
+}
+ 
