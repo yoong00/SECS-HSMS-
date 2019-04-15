@@ -598,3 +598,103 @@ namespace SM32proMX
     }
 }
  
+//another form
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Data.SqlServerCe;
+using System.IO;
+using System.Diagnostics;
+
+namespace SM32proMX
+{
+    public partial class SVID_Add : Form
+    {
+        public SVID_Add()
+        {
+            InitializeComponent();
+        }
+
+       
+        private void OK_Click(object sender, EventArgs e)
+        {
+            string currentPath = System.IO.Directory.GetCurrentDirectory();
+            string savePath = currentPath + "\\test.txt";
+            SaveData(savePath);
+            this.Close(); 
+        }
+        public void SaveData(string fileName)
+        {
+            using (TextWriter sw = new StreamWriter(fileName))
+            {
+                foreach (ListViewItem item in SVID_List.Items)
+                {
+                    sw.WriteLine(string.Format("{0},{1}", item.Text,item.SubItems[1].Text));
+                }
+                 
+            }
+        }
+
+        private void ADD_Click(object sender, EventArgs e)
+        {
+            Random r = new Random();
+
+            string SVID = tbox_id.Text;
+            int Values = Convert.ToInt32(r.Next(1, 1000));
+
+            if (SVID == "")
+            {
+                MessageBox.Show("SVID를 입력하세요");
+            }
+            else
+            {
+                string[] strs = new string[] { SVID, Values.ToString() };
+                ListViewItem Lvi = new ListViewItem(strs);
+                SVID_List.Items.Add(Lvi);
+                ClearInputControl();
+            }
+  
+        }
+
+        private void ClearInputControl()
+        {
+            tbox_id.Text = string.Empty;
+        }
+
+        private void Cancel_Click(object sender, EventArgs e)
+        {
+            this.Close();
+        }
+
+        public void SVID_List_SelectedIndexChanged(object sender, EventArgs e)
+        { 
+
+        }
+
+        private void REMOVE_Click(object sender, EventArgs e)
+        {
+            bool selected = SVID_List.SelectedItems.Count > 0;
+            if (selected == false)
+            {
+                MessageBox.Show("삭제 할 항목이 없습니다.");                       
+            }
+            else
+            {
+                ListViewItem lvi = SVID_List.SelectedItems[0];
+                SVID_List.Items.Remove(lvi);
+                ClearInputControl();
+            }
+            
+        }
+
+
+
+  
+    }
+}
